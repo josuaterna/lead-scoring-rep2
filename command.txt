@@ -1,0 +1,349 @@
+HACER UN PULL "LIMPIO" ASÍ: Esto toma tus commits actuales, los "aparta" un momento, trae los cambios de la 
+nube y luego vuelve a poner tus commits encima. Esto deja un historial lineal y mucho más limpio.
+
+git pull --rebase origin feature/frontend_cargue
+************************************************************************************************************
+ELIMINAR CACHE DE git
+git rm -r --cached nombrecarpeta
+************************************************************************************************************
+COMANDO DE MANTENIMIENTO COMPLETO DE GIT. COMPRIME TODO EL REPOSITORIO Y LIMPIA LO INNECESARIO
+git gc --prune=now --aggressive
+
+************************************************************************************************************
+ABRIR UI MLFLOW
+
+.\venv\Scripts\python.exe -m mlflow ui --backend-store-uri mlruns
+
+INFO:waitress:Serving on http://127.0.0.1:5000
+************************************************************************************************************
+ABRIR UI STREAMLIT
+
+.\venv\Scripts\python -m streamlit run app/streamlit_app.py
+
+  Local URL: http://localhost:8501
+  Network URL: http://192.168.1.5:8501
+************************************************************************************************************
+ELIMINAR __pycache__
+get-childitem -inc __pycache__ -recurs | remove-item -recurse -force
+
+************************************************************************************************************
+ELIMINAR EXPERIMENTS
+import mlflow
+
+
+# Obtener el experimento por nombre
+exp = mlflow.get_experiment_by_name("Nombre_de_tu_Experimento")
+
+if exp:
+    # Eliminar usando el ID del experimento
+    mlflow.delete_experiment(exp.experiment_id)
+    print(f"Experimento {exp.name} eliminado.")
+************************************************************************************************************
+VER EXPERIMENTS ELIMINADOS
+.\venv\Scripts\python.exe -m mlflow experiments search --view deleted_only
+************************************************************************************************************
+ELIMINAR PERMANENTEMENTE
+.\venv\Scripts\python.exe -m mlflow gc
+************************************************************************************************************
+CARGAR ARCHIVO A BASE DE DATOS SQL LITE
+
+import pandas as pd
+from sqlalchemy import create_engine
+
+# 1. Configurar la conexión (ejemplo con SQLite local)
+                engine = create_engine('sqlite:///datos_locales.db')
+
+                uploaded_file = st.file_uploader("Cargar archivo para entrenar nuevo modelo:", type="csv")
+
+                if uploaded_file is not None:
+                    if st.button("Comenzar carga"):
+                        # 2. Definir el tamaño del fragmento (ej: 10,000 filas)
+                        chunk_size = 10000
+                        
+                        # Crear un contenedor para mostrar el progreso
+                        progress_text = st.empty()
+                        
+                        # 3. Leer y escribir por fragmentos
+                        # 'if_exists=append' es CRUCIAL para no borrar los datos anteriores
+                        try:
+                            # pd.read_csv devuelve un iterador cuando se usa chunksize
+                            for i, chunk in enumerate(pd.read_csv(uploaded_file, chunksize=chunk_size)):
+                                chunk.to_sql(
+                                    name='mi_tabla_grande', 
+                                    con=engine, 
+                                    if_exists='append', 
+                                    index=False
+                                )
+                                progress_text.info(f"Cargado fragmento {i+1} ({ (i+1)*chunk_size } filas procesadas...)")
+                            
+                            st.success("✅ ¡Carga completada con éxito!")
+                            
+                        except Exception as e:
+                            st.error(f"Error durante la carga: {e}")
+
+                # Botón opcional para verificar que los datos están ahí
+                if st.button("Verificar filas en DB"):
+                    df_count = pd.read_sql("SELECT COUNT(*) as total FROM mi_tabla_grande", engine)
+                    st.write(f"Total de filas en la base de datos: {df_count['total'][0]}")
+************************************************************************************************************
+ABRIR EXPLORADOR DE ARCHIVOS NATIVO DEL OS
+
+import streamlit as st
+import tkinter as tk
+from tkinter import filedialog
+
+# Inicializar Tkinter oculto
+root = tk.Tk()
+root.withdraw()
+root.attributes('-topmost', True) # Asegura que aparezca al frente
+
+if st.button('Abrir Explorador de Archivos'):
+    # Abre la ventana de búsqueda y captura el string de la ruta
+    ruta = filedialog.askopenfilename(master=root)
+    if ruta:
+        st.session_state.ruta_manual = ruta
+
+# Campo de texto editable vinculado a la selección
+if 'ruta_manual' in st.session_state:
+    ruta_final = st.text_input("Ruta seleccionada:", value=st.session_state.ruta_manual)
+************************************************************************************************************
+ELIMINAR MODELOS DEL REGISTRO
+
+from mlflow.tracking import MlflowClient
+
+client = MlflowClient()
+model_name = "mi_modelo_big_data"
+
+# A. Eliminar una versión específica (ejemplo: versión 1)
+client.delete_model_version(name=model_name, version=1)
+
+# B. Eliminar el modelo completo (borra todas las versiones registradas)
+client.delete_registered_model(name=model_name)
+************************************************************************************************************
+ASIGNAR RUNS A RUNS PADRE
+from mlflow.tracking import MlflowClient
+
+client = MlflowClient()
+#IDs de tus runs antiguos
+id_hijo1 = "325da0f01e45443eb3453e795a90cd29"
+id_hijo2 = "8637a7d5e67145fc96c4d5a2350ffd3b"
+id_hijo3 = "b7290c1e617f46509b02bf4a7280bb54"
+id_padre = "896bf4761e17497e8263adb9f47d4d64"
+
+# Asignar el tag de sistema que crea la jerarquía
+client.set_tag(id_hijo1, "mlflow.parentRunId", id_padre)
+client.set_tag(id_hijo2, "mlflow.parentRunId", id_padre)
+client.set_tag(id_hijo3, "mlflow.parentRunId", id_padre)
+*************************************************************************************************************
+GRAFICAR IMPORTANCIA DE VARIABLES DE MODELO ENTRENADO
+import mlflow.xgboost
+import matplotlib.pyplot as plt
+import xgboost as xgb
+
+# 1. Cargar el booster desde MLflow
+model_uri = f"runs:/{run_id}/model"
+trained_booster = mlflow.xgboost.load_model(model_uri)
+
+# 2. Graficar importancia
+# 'weight' es el default, pero 'gain' suele ser más informativo para detectar fugas
+fig, ax = plt.subplots(figsize=(10, 8))
+xgb.plot_importance(trained_booster, importance_type='gain', ax=ax)
+plt.title("Importancia de Variables (XGBoost)")
+plt.show()
+
+# En Streamlit, usa: st.pyplot(fig)
+*******************************************************************************************************************************
+INGENIERÍA INVERSA DETECTAR CAMPOS QUE GENERAN ERROR AL ENTRENAR AUC 1.0
+
+import mlflow.xgboost
+import matplotlib.pyplot as plt
+import xgboost as xgb
+import pandas as pd
+
+# 1. Cargar el booster desde MLflow
+path = f"D:\\Backup2026\\UNIR\\TFM 2025\\lead_scoring_app\\mlruns\\146991776847785435\\algo.csv"
+run_id = "d69dddb152db4aed97f8a7e7d08a3789"
+model_uri = f"runs:/{run_id}/model"
+preprocessor = mlflow.sklearn.load_model(f"runs:/{run_id}/preprocessor")
+trained_booster = mlflow.xgboost.load_model(model_uri)
+target_col = "contacto_positivo"
+
+# 2. Graficar importancia
+# 'weight' es el default, pero 'gain' suele ser más informativo para detectar fugas
+#nombres_features = preprocessor.get_feature_names_out()
+#nombres_features = preprocessor[:-1].get_feature_names_out()
+# try:
+#     nombres_features = preprocessor.get_feature_names_out()
+#     print("Logrado con método directo")
+# except Exception as e:
+#     print(f"Error directo: {e}")
+    
+#     # 2. Si falla, vamos a inspeccionar qué hay dentro del ColumnTransformer
+#     # Esto te mostrará los nombres de las columnas antes de f2065
+#     nombres_features = []
+#     for name, transformer, columns in preprocessor.transformers_:
+#         if name == 'remainder' and transformer == 'drop':
+#             continue
+        
+#         try:
+#             # Intentamos obtener nombres de cada transformador individual
+#             names = transformer.get_feature_names_out()
+#             nombres_features.extend(names)
+#         except:
+#             # Si el transformador (como tu 'to_str') no tiene el método,
+#             # usamos los nombres de las columnas originales que recibió
+#             nombres_features.extend(columns)
+
+# # Ahora ya puedes buscar a los culpables
+# print(f"Culpable 1 (f2065): {nombres_features[2065]}")
+# print(f"Culpable 2 (f2066): {nombres_features[2066]}")
+
+# 1. Toma una muestra pequeña de tus datos originales (1 sola fila)
+sample_df = pd.read_csv(path, sep=";", nrows=1) 
+# (Asegúrate de quitar el target si está presente)
+if target_col in sample_df.columns:
+    sample_df = sample_df.drop(columns=[target_col])
+
+# 2. Transforma esa fila con el preprocesador cargado de MLflow
+X_transformed = preprocessor.transform(sample_df)
+
+# 3. Si el resultado es una matriz dispersa (sparse), conviértela a densa
+if hasattr(X_transformed, "toarray"):
+    X_transformed = X_transformed.toarray()
+
+# 4. Obtener los nombres de columnas REALES
+# Si get_feature_names_out falla, usaremos la inspección por pasos:
+try:
+    nombres_reales = preprocessor.get_feature_names_out()
+except:
+    # Si falla, miramos dentro de los transformadores para ver el orden
+    print("Detectando nombres por inspección de transformadores...")
+    nombres_reales = []
+    for name, trans, cols in preprocessor.transformers_:
+        if name == 'remainder' and trans == 'drop': continue
+        try:
+            nombres_reales.extend(trans.get_feature_names_out())
+        except:
+            # Si es tu transformador 'to_str', el nombre suele ser el mismo de la columna original
+            nombres_reales.extend(cols)
+
+# # 5. Imprimir con validación de rango
+# print(f"Total de columnas detectadas: {len(nombres_reales)}")
+# if len(nombres_reales) > 2066:
+#     print(f"Culpable 1 (f2065): {nombres_reales[2065]}")
+#     print(f"Culpable 2 (f2066): {nombres_reales[2066]}")
+# else:
+#     print("La lista sigue siendo corta. Es probable que el One-Hot Encoder esté creando miles de columnas.")
+# # 1. Mira la forma de la matriz transformada
+# # Si X_transformed tiene más de 2000 columnas, aquí lo veremos
+# print(f"Forma de la matriz transformada: {X_transformed.shape}")
+
+# # 2. Vamos a extraer los nombres directos del ColumnTransformer de forma atómica
+# # Scikit-learn guarda los nombres generados en el atributo 'get_feature_names_out'
+# # pero hay que asegurarse de llamar al método del objeto principal
+# try:
+#     all_names = preprocessor.get_feature_names_out()
+#     print(f"Total nombres recuperados: {len(all_names)}")
+#     print(f"Culpable f2065: {all_names[2065]}")
+#     print(f"Culpable f2066: {all_names[2066]}")
+# except Exception as e:
+#     print(f"No se pudo extraer automáticamente: {e}")
+
+# nombres_finales = []
+# # Accedemos a los transformadores internos del ColumnTransformer
+# for name, transformer, columns in preprocessor.transformers_:
+#     if name == 'remainder' and transformer == 'drop':
+#         continue
+    
+#     try:
+#         # Intentamos obtener nombres (esto funcionará para OneHotEncoder, Scalers, etc.)
+#         names = transformer.get_feature_names_out()
+#         nombres_finales.extend(names)
+#     except:
+#         # Si falla (como en to_str), usamos los nombres de las columnas originales
+#         # que ese transformador recibió.
+#         nombres_finales.extend(columns)
+
+# print(f"Lista reconstruida: {len(nombres_finales)} columnas")
+
+# if len(nombres_finales) >= 2066:
+#     print(f"🔍 CULPABLE f2065: {nombres_finales[2065]}")
+#     print(f"🔍 CULPABLE f2066: {nombres_finales[2066]}")
+    
+    # 3. SI FALLA: Mapeo por descarte
+    # Mira tus columnas originales. ¿Cuál de ellas es categórica?
+    # El OneHotEncoder suele poner los nombres así: "cat__NOMBRE_VALOR"
+    # Si f2065 existe, es porque una de tus columnas categóricas tiene MILES de valores.
+acumulado = 0
+print(f"Buscando el origen de la columna 2065...")
+
+for name, trans, cols in preprocessor.transformers_:
+    if name == 'remainder' and trans == 'drop':
+        continue
+    
+    # Creamos un dummy para ver cuántas columnas genera este transformador
+    X_dummy = trans.transform(sample_df[cols])
+    if hasattr(X_dummy, "toarray"):
+        X_dummy = X_dummy.toarray()
+    
+    cantidad_columnas = X_dummy.shape[1]
+    rango_final = acumulado + cantidad_columnas
+    
+    print(f"Transformador '{name}' procesa: {cols} -> Genera {cantidad_columnas} columnas (Rango: {acumulado} a {rango_final})")
+    
+    if acumulado <= 2065 < rango_final:
+        print(f"--- 🎯 ¡ENCONTRADO! ---")
+        print(f"El culpable es el transformador '{name}' que procesa las columnas: {cols}")
+        
+        # Si es un OneHotEncoder, intentamos ver el valor específico
+        if hasattr(trans, 'get_feature_names_out'):
+            nombres = trans.get_feature_names_out()
+            indice_relativo = 2065 - acumulado
+            print(f"La variable exacta f2065 es: {nombres[indice_relativo]}")
+            
+    acumulado = rango_final
+# fig, ax = plt.subplots(figsize=(10, 8))
+# xgb.plot_importance(trained_booster, importance_type='gain', ax=ax)
+# plt.title("Importancia de Variables (XGBoost)")
+# plt.show()
+
+# En Streamlit, usa: st.pyplot(fig)
+
+************************************************************************************
+OBTENER TAG
+from mlflow.tracking import MlflowClient
+
+client = MlflowClient()
+run = client.get_run("ID_DE_TU_RUN")
+
+# Esto devuelve un diccionario con todos los tags
+todos_los_tags = run.data.tags
+
+# Acceder a uno específico
+valor_tag = todos_los_tags.get("nombre_del_tag", "No encontrado")
+print(f"El valor del tag es: {valor_tag}")
+**************************************************************************************
+AGREGAR O SET TAG
+import mlflow
+
+with mlflow.start_run():
+    # Insertar un solo tag
+    mlflow.set_tag("proyecto", "deteccion_fraude")
+    
+    # Insertar múltiples tags a la vez usando un diccionario
+    tags = {
+        "equipo": "data_science_latam",
+        "prioridad": "alta",
+        "tipo_modelo": "xgboost"
+    }
+    mlflow.set_tags(tags)
+
+*****************************************************************************    
+
+# 1. Traer y aplicar los cambios remotos debajo de los tuyos
+git pull --rebase origin feature/depuracion
+
+# 2. Subir el resultado final a GitHub
+git push origin feature/depuracion
+
+****************************************************************************
